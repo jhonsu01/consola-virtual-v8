@@ -159,6 +159,8 @@ class ConsoleWindow(QtWidgets.QMainWindow):
     knobChanged = QtCore.Signal(str, float)
     modeToggled = QtCore.Signal(str, bool)
     effectTriggered = QtCore.Signal(str)
+    firewallRequested = QtCore.Signal()
+    regeneratePinRequested = QtCore.Signal()
 
     def __init__(self, version: str = "1.0.0"):
         super().__init__()
@@ -187,23 +189,64 @@ class ConsoleWindow(QtWidgets.QMainWindow):
     def _build_top_bar(self) -> QtWidgets.QWidget:
         bar = QtWidgets.QFrame()
         bar.setObjectName("TopBar")
-        layout = QtWidgets.QHBoxLayout(bar)
-        layout.setContentsMargins(14, 10, 14, 10)
+        outer = QtWidgets.QVBoxLayout(bar)
+        outer.setContentsMargins(14, 10, 14, 10)
+        outer.setSpacing(8)
 
+        # --- Fila 1: titulo + IP + estado ---
+        row1 = QtWidgets.QHBoxLayout()
         title = QtWidgets.QLabel("CONSOLA VIRTUAL V8")
         title.setObjectName("Title")
-
         self.ip_label = QtWidgets.QLabel("IP local: --")
         self.ip_label.setObjectName("IpLabel")
         self.status_label = QtWidgets.QLabel("Servidor: iniciando...")
         self.status_label.setObjectName("StatusLabel")
+        row1.addWidget(title)
+        row1.addStretch(1)
+        row1.addWidget(self.ip_label)
+        row1.addSpacing(18)
+        row1.addWidget(self.status_label)
 
-        layout.addWidget(title)
-        layout.addStretch(1)
-        layout.addWidget(self.ip_label)
-        layout.addSpacing(18)
-        layout.addWidget(self.status_label)
+        # --- Fila 2: PIN + acciones (Firewall / nuevo PIN) ---
+        row2 = QtWidgets.QHBoxLayout()
+        pin_caption = QtWidgets.QLabel("PIN de emparejamiento:")
+        pin_caption.setObjectName("IpLabel")
+        self.pin_label = QtWidgets.QLabel("----")
+        self.pin_label.setObjectName("PinLabel")
+        self.notify_label = QtWidgets.QLabel("")
+        self.notify_label.setObjectName("StatusLabel")
+
+        self.firewall_btn = QtWidgets.QPushButton("Abrir Firewall")
+        self.firewall_btn.setObjectName("ActionButton")
+        self.firewall_btn.setToolTip(
+            "Crea la regla de Firewall para el puerto 8080. Pulsalo si el "
+            "telefono no conecta (pedira permiso de administrador)."
+        )
+        self.firewall_btn.clicked.connect(self.firewallRequested.emit)
+
+        self.newpin_btn = QtWidgets.QPushButton("Nuevo PIN")
+        self.newpin_btn.setObjectName("ActionButton")
+        self.newpin_btn.clicked.connect(self.regeneratePinRequested.emit)
+
+        row2.addWidget(pin_caption)
+        row2.addWidget(self.pin_label)
+        row2.addSpacing(16)
+        row2.addWidget(self.notify_label, 1)
+        row2.addWidget(self.firewall_btn)
+        row2.addWidget(self.newpin_btn)
+
+        outer.addLayout(row1)
+        outer.addLayout(row2)
         return bar
+
+    # -- PIN y notificaciones --------------------------------------------- #
+    def set_pin(self, pin: str) -> None:
+        self.pin_label.setText(str(pin))
+
+    def notify(self, message: str) -> None:
+        """Muestra un mensaje transitorio en la barra superior."""
+        self.notify_label.setText(message)
+        QtCore.QTimer.singleShot(6000, lambda: self.notify_label.setText(""))
 
     def _build_knob_panel(self) -> QtWidgets.QWidget:
         panel = QtWidgets.QFrame()
@@ -316,6 +359,16 @@ class ConsoleWindow(QtWidgets.QMainWindow):
             #IpLabel {{ font-size: 12px; color: {COLOR_TEXT}; }}
             #StatusLabel {{ font-size: 12px; color: #9aa0a6; }}
             #StatusLabel[ok="true"] {{ color: #4caf50; }}
+            #PinLabel {{
+                font-size: 18px; font-weight: bold; color: {COLOR_ACCENT};
+                letter-spacing: 4px; font-family: 'Consolas', monospace;
+            }}
+            #ActionButton {{
+                background: {COLOR_EFFECT}; color: {COLOR_TEXT};
+                border: 1px solid {COLOR_ACCENT}; border-radius: 6px;
+                padding: 4px 12px; font-size: 12px;
+            }}
+            #ActionButton:hover {{ background: {COLOR_ACCENT}; color: #1a1a1a; }}
             #Panel {{ background: {COLOR_PANEL}; border-radius: 12px; }}
             #ModeButton {{
                 background: #3a2014; color: {COLOR_TEXT};

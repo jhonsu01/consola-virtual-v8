@@ -76,6 +76,7 @@ jobs:
         run: |
           flutter create --platforms=android --project-name consola_v8_remote --org com.consolav8 .
           git checkout -- pubspec.yaml lib/main.dart
+          python tools/patch_android_manifest.py
           flutter pub get
 
       - name: Compilar APK release

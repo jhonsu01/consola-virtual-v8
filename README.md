@@ -54,16 +54,21 @@ python -m pip install -r requirements.txt
 python -m consola_v8
 ```
 
-La consola reportará en el log:
-`Servidor WebSocket local iniciado en el puerto 8080 ... Escuchando peticiones...`
-y mostrará la **IP local** en la barra superior. Abre el puerto **8080** en el
-Firewall de Windows para tráfico LAN entrante.
+La consola muestra en la barra superior la **IP local**, el estado del servidor
+y un **PIN de emparejamiento** de 4 dígitos. La primera vez, pulsa **"Abrir
+Firewall"** (pedirá permiso de administrador) para permitir el tráfico LAN en
+los puertos 8080 (TCP) y 8079 (UDP de descubrimiento).
 
 ### App remota (Android)
 
 1. Instala el **APK** desde [Releases](https://github.com/jhonsu01/consola-virtual-v8/releases/latest).
 2. Conecta el teléfono a la **misma red Wi-Fi** que el PC.
-3. Abre la app, escribe la IP del Host (ej. `192.168.1.15`) y pulsa **Conectar**.
+3. Abre la app: **detecta automáticamente la IP** del Host (o pulsa "Buscar").
+4. Escribe el **PIN** mostrado en el Host y pulsa **Conectar**.
+
+> **¿"No se puede conectar"?** Es casi siempre el Firewall de Windows. Pulsa
+> **"Abrir Firewall"** en el Host una vez y reintenta. Asegúrate de que ambos
+> dispositivos estén en la misma red (no en redes de "invitados" aisladas).
 
 ---
 

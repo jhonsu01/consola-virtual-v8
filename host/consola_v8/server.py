@@ -35,20 +35,29 @@ VALID_EVENTS = {"knob_update", "effect_trigger", "mode_toggle"}
 class ConsoleServer:
     """Servidor de sockets que sincroniza el Host con N clientes remotos."""
 
+    #: Segundos que un cliente tiene para enviar su PIN antes de cerrarse.
+    AUTH_TIMEOUT = 20
+
     def __init__(
         self,
         on_event: Callable[[Dict[str, Any]], None],
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,
+        pin_provider: Optional[Callable[[], Optional[str]]] = None,
+        state_provider: Optional[Callable[[], Dict[str, Any]]] = None,
     ) -> None:
         self._on_event = on_event
         self._host = host
         self._port = port
+        # Devuelve el PIN actual (o None/"" para desactivar el emparejamiento).
+        self._pin_provider = pin_provider
+        # Devuelve el estado actual (knobs/modes) para sincronizar al conectar.
+        self._state_provider = state_provider
 
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._server = None
-        self._clients: Set[Any] = set()
+        self._clients: Set[Any] = set()  # solo clientes AUTENTICADOS
         self._running = threading.Event()
 
     # ------------------------------------------------------------------ #
@@ -105,9 +114,15 @@ class ConsoleServer:
     # ------------------------------------------------------------------ #
     async def _handler(self, websocket) -> None:
         """Atiende una conexion entrante (un cliente Android)."""
-        self._clients.add(websocket)
         peer = getattr(websocket, "remote_address", "?")
-        logger.info("Cliente conectado: %s (total=%d)", peer, len(self._clients))
+
+        # Emparejamiento por PIN ANTES de aceptar cualquier evento.
+        if not await self._authenticate(websocket, peer):
+            return
+
+        self._clients.add(websocket)
+        logger.info("Cliente AUTENTICADO: %s (total=%d)", peer, len(self._clients))
+        await self._send_state(websocket)
         try:
             async for raw in websocket:
                 await self._process_message(websocket, raw)
@@ -116,6 +131,67 @@ class ConsoleServer:
         finally:
             self._clients.discard(websocket)
             logger.info("Cliente desconectado: %s (total=%d)", peer, len(self._clients))
+
+    async def _authenticate(self, websocket, peer) -> bool:
+        """Exige un mensaje ``auth`` con el PIN correcto. Devuelve True si pasa.
+
+        Si no hay PIN configurado (provider None o vacio), el emparejamiento se
+        considera desactivado y se acepta la conexion directamente.
+        """
+        pin = self._pin_provider() if self._pin_provider else None
+        if not pin:
+            return True
+
+        try:
+            raw = await asyncio.wait_for(websocket.recv(), timeout=self.AUTH_TIMEOUT)
+        except Exception:
+            logger.info("Auth: timeout/cierre sin PIN de %s", peer)
+            await self._safe_close(websocket)
+            return False
+
+        try:
+            msg = json.loads(raw)
+        except Exception:
+            msg = {}
+
+        sent = str(msg.get("pin", "")).strip()
+        if msg.get("event") == "auth" and sent == str(pin).strip():
+            await self._try_send(websocket, {"event": "auth_result", "status": "ok"})
+            device = msg.get("device", "?")
+            logger.info("Auth OK: %s (device=%s)", peer, device)
+            return True
+
+        logger.info("Auth FALLIDA: %s (PIN incorrecto)", peer)
+        await self._try_send(websocket, {"event": "auth_result", "status": "fail"})
+        await self._safe_close(websocket)
+        return False
+
+    @staticmethod
+    async def _try_send(websocket, message: Dict[str, Any]) -> None:
+        """Envia un mensaje ignorando errores (para handshake/estado)."""
+        try:
+            await websocket.send(json.dumps(message))
+        except Exception:  # pragma: no cover
+            pass
+
+    async def _send_state(self, websocket) -> None:
+        """Envia el estado actual (knobs/modes) al cliente recien autenticado."""
+        if not self._state_provider:
+            return
+        try:
+            snap = self._state_provider()
+            payload = {"event": "state_sync", "knobs": snap.get("knobs", {}),
+                       "modes": snap.get("modes", {})}
+            await self._try_send(websocket, payload)
+        except Exception as exc:  # pragma: no cover
+            logger.debug("No se pudo enviar state_sync: %s", exc)
+
+    @staticmethod
+    async def _safe_close(websocket) -> None:
+        try:
+            await websocket.close()
+        except Exception:  # pragma: no cover
+            pass
 
     async def _process_message(self, sender, raw: str) -> None:
         """Valida un mensaje JSON, ejecuta el callback y reenvia a los demas."""

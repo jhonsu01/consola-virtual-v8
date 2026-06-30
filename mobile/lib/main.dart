@@ -4,13 +4,20 @@
 // Host Windows por WebSocket (ws://IP:8080) y replica los controles del
 // hardware V8: 7 knobs, 6 modos naranjas y 12 efectos instantaneos.
 //
+// v1.1.0:
+//   - Autodescubrimiento del Host en la LAN (sondeo UDP en el puerto 8079).
+//   - Emparejamiento por PIN: tras conectar, se envia {"event":"auth","pin":...}
+//     y se espera {"event":"auth_result","status":"ok"}.
+//
 // Protocolo (JSON plano):
+//   {"event":"auth","pin":"1234","device":"Android"}
 //   {"event":"knob_update","control":"MIC","value":0.85}
 //   {"event":"mode_toggle","control":"Dodge","status":true}
 //   {"event":"effect_trigger","control":"Applause"}
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -23,6 +30,8 @@ const Color kText = Color(0xFFE0E0E0);
 const Color kEffect = Color(0xFF333333);
 
 const int kPort = 8080;
+const int kDiscoveryPort = 8079;
+const String kProbe = 'CONSOLA_V8_DISCOVER';
 
 const List<String> kKnobs = [
   'MIC', 'ECHO', 'TREBLE', 'BASS', 'RECORD', 'MUSIC', 'MONITOR'
@@ -67,7 +76,46 @@ class ConsolaV8App extends StatelessWidget {
   }
 }
 
-/// Pantalla inicial: pide la IP del Host e intenta abrir el WebSocket.
+/// Busca el Host en la LAN enviando un sondeo UDP en broadcast y esperando la
+/// respuesta del DiscoveryResponder del Host. Devuelve la IP o null.
+Future<String?> discoverHost({Duration timeout = const Duration(seconds: 3)}) async {
+  RawDatagramSocket? socket;
+  final completer = Completer<String?>();
+  try {
+    socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+    socket.broadcastEnabled = true;
+    final probe = utf8.encode(kProbe);
+    final target = InternetAddress('255.255.255.255');
+
+    socket.listen((event) {
+      if (event == RawSocketEvent.read) {
+        final dg = socket!.receive();
+        if (dg == null) return;
+        try {
+          final data = jsonDecode(utf8.decode(dg.data)) as Map<String, dynamic>;
+          if (data['app'] == 'ConsolaV8' && data['ip'] is String) {
+            if (!completer.isCompleted) completer.complete(data['ip'] as String);
+          }
+        } catch (_) {}
+      }
+    });
+
+    // Envia el sondeo varias veces para mayor fiabilidad en redes con perdida.
+    socket.send(probe, target, kDiscoveryPort);
+    Timer(const Duration(milliseconds: 350),
+        () => socket?.send(probe, target, kDiscoveryPort));
+    Timer(const Duration(milliseconds: 900),
+        () => socket?.send(probe, target, kDiscoveryPort));
+
+    return await completer.future.timeout(timeout, onTimeout: () => null);
+  } catch (_) {
+    return null;
+  } finally {
+    socket?.close();
+  }
+}
+
+/// Pantalla inicial: autodescubre la IP, pide el PIN y abre el WebSocket.
 class ConnectScreen extends StatefulWidget {
   const ConnectScreen({super.key});
 
@@ -76,15 +124,43 @@ class ConnectScreen extends StatefulWidget {
 }
 
 class _ConnectScreenState extends State<ConnectScreen> {
-  final TextEditingController _ipController =
-      TextEditingController(text: '192.168.1.');
+  final TextEditingController _ipController = TextEditingController();
+  final TextEditingController _pinController = TextEditingController();
   String? _error;
+  String _discoveryMsg = '';
   bool _connecting = false;
+  bool _discovering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Intenta autodetectar el Host al abrir la pantalla.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoDiscover());
+  }
+
+  Future<void> _autoDiscover() async {
+    setState(() {
+      _discovering = true;
+      _discoveryMsg = 'Buscando el Host en la red...';
+    });
+    final ip = await discoverHost();
+    if (!mounted) return;
+    setState(() {
+      _discovering = false;
+      if (ip != null) {
+        _ipController.text = ip;
+        _discoveryMsg = 'Host detectado: $ip';
+      } else {
+        _discoveryMsg = 'No se detecto automaticamente. Ingresa la IP manual.';
+      }
+    });
+  }
 
   Future<void> _connect() async {
     final ip = _ipController.text.trim();
+    final pin = _pinController.text.trim();
     if (ip.isEmpty) {
-      setState(() => _error = 'Ingresa la IP del Host');
+      setState(() => _error = 'Ingresa o detecta la IP del Host');
       return;
     }
     setState(() {
@@ -96,7 +172,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
       await channel.ready; // lanza excepcion si no conecta
       if (!mounted) return;
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => ConsoleScreen(channel: channel, host: ip),
+        builder: (_) => ConsoleScreen(channel: channel, host: ip, pin: pin),
       ));
     } catch (e) {
       setState(() => _error = 'No se pudo conectar a $ip:$kPort');
@@ -117,6 +193,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
               const Icon(Icons.graphic_eq, color: kAccent, size: 72),
               const SizedBox(height: 12),
               const Text('CONSOLA VIRTUAL V8',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                       color: kAccent,
                       fontSize: 22,
@@ -124,29 +201,56 @@ class _ConnectScreenState extends State<ConnectScreen> {
                       letterSpacing: 1.5)),
               const Text('Controlador remoto',
                   style: TextStyle(color: kText, fontSize: 14)),
-              const SizedBox(height: 32),
+              const SizedBox(height: 28),
               TextField(
                 controller: _ipController,
                 keyboardType: TextInputType.number,
                 style: const TextStyle(color: kText, fontSize: 18),
-                decoration: InputDecoration(
-                  labelText: 'IP del Host Windows',
-                  hintText: 'Ej: 192.168.1.15',
-                  prefixIcon: const Icon(Icons.wifi, color: kAccent),
-                  filled: true,
-                  fillColor: kPanel,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
+                decoration: _decoration(
+                  label: 'IP del Host Windows',
+                  hint: 'Ej: 192.168.1.15',
+                  icon: Icons.wifi,
                 ),
               ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(_discoveryMsg,
+                        style: TextStyle(
+                            color: _discovering ? kAccent : kText, fontSize: 12)),
+                  ),
+                  TextButton.icon(
+                    onPressed: _discovering ? null : _autoDiscover,
+                    icon: _discovering
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: kAccent))
+                        : const Icon(Icons.radar, color: kAccent, size: 18),
+                    label: const Text('Buscar',
+                        style: TextStyle(color: kAccent)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _pinController,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                style: const TextStyle(color: kText, fontSize: 18, letterSpacing: 4),
+                decoration: _decoration(
+                  label: 'PIN de emparejamiento',
+                  hint: 'Mostrado en el Host',
+                  icon: Icons.lock,
+                ).copyWith(counterText: ''),
+              ),
               if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!,
-                    style: const TextStyle(color: Colors.redAccent)),
+                const SizedBox(height: 8),
+                Text(_error!, style: const TextStyle(color: Colors.redAccent)),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -175,9 +279,25 @@ class _ConnectScreenState extends State<ConnectScreen> {
     );
   }
 
+  InputDecoration _decoration(
+      {required String label, required String hint, required IconData icon}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: Icon(icon, color: kAccent),
+      filled: true,
+      fillColor: kPanel,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide.none,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _ipController.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 }
@@ -213,15 +333,19 @@ class _Throttle {
   void dispose() => _timer?.cancel();
 }
 
-/// Pantalla principal: replica la consola y sincroniza con el Host.
+/// Pantalla principal: autentica con PIN, replica la consola y sincroniza.
 class ConsoleScreen extends StatefulWidget {
-  const ConsoleScreen({super.key, required this.channel, required this.host});
+  const ConsoleScreen(
+      {super.key, required this.channel, required this.host, required this.pin});
   final WebSocketChannel channel;
   final String host;
+  final String pin;
 
   @override
   State<ConsoleScreen> createState() => _ConsoleScreenState();
 }
+
+enum _Auth { connecting, ok, fail }
 
 class _ConsoleScreenState extends State<ConsoleScreen> {
   final Map<String, double> _knobs = {
@@ -231,23 +355,52 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   final Map<String, bool> _modes = {for (final m in kModes) m: false};
   final _Throttle _throttle = _Throttle(const Duration(milliseconds: 33));
   late final StreamSubscription _sub;
-  bool _connected = true;
+  Timer? _authTimer;
+  _Auth _auth = _Auth.connecting;
 
   @override
   void initState() {
     super.initState();
-    // Escucha eventos entrantes (eco del Host u otros clientes) para sincronizar.
     _sub = widget.channel.stream.listen(
       _onMessage,
-      onDone: () => setState(() => _connected = false),
-      onError: (_) => setState(() => _connected = false),
+      onDone: () {
+        if (mounted && _auth == _Auth.connecting) {
+          setState(() => _auth = _Auth.fail);
+        }
+      },
+      onError: (_) {
+        if (mounted) setState(() => _auth = _Auth.fail);
+      },
     );
+    // Handshake de emparejamiento.
+    widget.channel.sink
+        .add(jsonEncode({'event': 'auth', 'pin': widget.pin, 'device': 'Android'}));
+    _authTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted && _auth == _Auth.connecting) setState(() => _auth = _Auth.fail);
+    });
   }
 
   void _onMessage(dynamic raw) {
     try {
       final data = jsonDecode(raw as String) as Map<String, dynamic>;
       final event = data['event'];
+      if (event == 'auth_result') {
+        setState(() => _auth = data['status'] == 'ok' ? _Auth.ok : _Auth.fail);
+        return;
+      }
+      if (event == 'state_sync') {
+        setState(() {
+          final knobs = (data['knobs'] as Map?) ?? {};
+          knobs.forEach((k, v) {
+            if (_knobs.containsKey(k)) _knobs[k] = (v as num).toDouble();
+          });
+          final modes = (data['modes'] as Map?) ?? {};
+          modes.forEach((k, v) {
+            if (_modes.containsKey(k)) _modes[k] = v == true;
+          });
+        });
+        return;
+      }
       final control = data['control'] as String?;
       if (control == null) return;
       setState(() {
@@ -263,7 +416,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
   }
 
   void _send(Map<String, dynamic> msg) {
-    if (!_connected) return;
+    if (_auth != _Auth.ok) return;
     widget.channel.sink.add(jsonEncode(msg));
   }
 
@@ -296,6 +449,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_auth != _Auth.ok) return _buildAuthOverlay();
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -316,6 +470,40 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     );
   }
 
+  Widget _buildAuthOverlay() {
+    final connecting = _auth == _Auth.connecting;
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(connecting ? Icons.lock_clock : Icons.lock_outline,
+                color: kAccent, size: 64),
+            const SizedBox(height: 16),
+            Text(
+              connecting ? 'Verificando PIN...' : 'PIN incorrecto o sin respuesta',
+              style: const TextStyle(color: kText, fontSize: 16),
+            ),
+            const SizedBox(height: 20),
+            if (connecting)
+              const CircularProgressIndicator(color: kAccent)
+            else
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: kAccent, foregroundColor: Colors.black),
+                onPressed: () {
+                  widget.channel.sink.close();
+                  Navigator.of(context).pop();
+                },
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Volver'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -323,14 +511,11 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
           color: kPanel, borderRadius: BorderRadius.circular(10)),
       child: Row(
         children: [
-          Icon(_connected ? Icons.cloud_done : Icons.cloud_off,
-              color: _connected ? Colors.green : Colors.redAccent, size: 20),
+          const Icon(Icons.cloud_done, color: Colors.green, size: 20),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              _connected ? 'Conectado a ${widget.host}' : 'Desconectado',
-              style: const TextStyle(color: kText, fontSize: 13),
-            ),
+            child: Text('Conectado a ${widget.host}',
+                style: const TextStyle(color: kText, fontSize: 13)),
           ),
           IconButton(
             icon: const Icon(Icons.logout, color: kAccent, size: 20),
@@ -471,6 +656,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
 
   @override
   void dispose() {
+    _authTimer?.cancel();
     _throttle.dispose();
     _sub.cancel();
     widget.channel.sink.close();

@@ -6,6 +6,26 @@ y el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-30
+
+### Agregado
+- **Autodescubrimiento del Host (LAN):** la app Android encuentra la IP del Host
+  automaticamente mediante un sondeo UDP en broadcast (puerto 8079); ya no es
+  obligatorio escribir la IP a mano. Botón "Buscar" para reintentar.
+- **Emparejamiento por PIN:** el Host genera un PIN de 4 dígitos visible en su
+  barra superior; cada dispositivo debe ingresarlo para conectarse. Eventos
+  `auth` / `auth_result` en el protocolo. Botón "Nuevo PIN" para regenerarlo.
+- **Sincronización inicial de estado** (`state_sync`): al autenticarse, el Host
+  envía el estado actual de knobs y modos para que el móvil arranque sincronizado.
+- **Botón "Abrir Firewall"** en el Host: crea (con UAC) las reglas de entrada
+  para TCP 8080 y UDP 8079 — soluciona el "no se puede conectar" más común.
+
+### Corregido
+- **APK release ahora declara el permiso `INTERNET` y habilita
+  `usesCleartextTraffic`** (Android 9+ bloquea `ws://` por defecto). Se parchea
+  el `AndroidManifest.xml` tras `flutter create` en el CI y vía
+  `mobile/tools/patch_android_manifest.py`.
+
 ## [1.0.0] - 2026-06-30
 
 ### Agregado
@@ -33,5 +53,6 @@ y el versionado es [SemVer](https://semver.org/lang/es/).
   estan cableados como parametros del protocolo; su DSP en tiempo real se
   abordara en una version futura con backend `sounddevice + numpy`.
 
-[Unreleased]: https://github.com/jhonsu01/consola-virtual-v8/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jhonsu01/consola-virtual-v8/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jhonsu01/consola-virtual-v8/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jhonsu01/consola-virtual-v8/releases/tag/v1.0.0

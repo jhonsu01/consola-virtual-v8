@@ -4,6 +4,40 @@ Mensajes **JSON planos** sobre **WebSocket** en `ws://<IP_HOST>:8080`.
 El Host es el servidor; las apps Android son clientes. El Host reenvía cada
 cambio recibido al resto de clientes para mantenerlos sincronizados.
 
+## Autodescubrimiento (UDP, puerto 8079)
+
+Antes de conectar por WebSocket, el cliente puede localizar al Host:
+
+```
+Cliente -> broadcast 255.255.255.255:8079 : "CONSOLA_V8_DISCOVER"   (UDP)
+Host    -> respuesta unicast              : {"app":"ConsolaV8","ip":"192.168.x.x",
+                                             "port":8080,"name":"<host>","requires_pin":true}
+```
+
+## Emparejamiento por PIN (primer mensaje obligatorio)
+
+Tras abrir el WebSocket, el cliente DEBE autenticarse antes de enviar eventos:
+
+```json
+{ "event": "auth", "pin": "1234", "device": "Android" }
+```
+
+El Host responde:
+
+```json
+{ "event": "auth_result", "status": "ok" }     // PIN correcto: continúa
+{ "event": "auth_result", "status": "fail" }   // PIN incorrecto: cierra la conexión
+```
+
+Si la autenticación es correcta, el Host envía de inmediato el estado actual:
+
+```json
+{ "event": "state_sync", "knobs": {"MIC":0.8, ...}, "modes": {"Dodge":false, ...} }
+```
+
+Mientras el cliente no esté autenticado, cualquier otro evento se ignora y la
+conexión se cierra tras 20 s sin un `auth` válido.
+
 ## Eventos
 
 ### 1. `knob_update` — movimiento de potenciómetro
