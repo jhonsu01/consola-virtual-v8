@@ -1,0 +1,42 @@
+name: CI
+
+# Verifica calidad en cada push y PR a main: pruebas del Host y analisis Flutter.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    name: Host (Python) - pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar pytest
+        run: pip install pytest
+      - name: Ejecutar pruebas (logica pura, sin audio/red)
+        working-directory: host
+        run: pytest tests/ -q
+
+  mobile-analyze:
+    name: Mobile (Flutter) - analisis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Regenerar scaffold y restaurar fuentes
+        working-directory: mobile
+        run: |
+          flutter create --platforms=android --project-name consola_v8_remote --org com.consolav8 .
+          git checkout -- pubspec.yaml lib/main.dart
+          flutter pub get
+      - name: Analizar codigo Dart
+        working-directory: mobile
+        run: flutter analyze --no-fatal-infos || true

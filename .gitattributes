@@ -1,0 +1,15 @@
+# Normaliza saltos de linea: el repo guarda LF; Windows hace checkout CRLF.
+* text=auto eol=lf
+
+# Scripts que SIEMPRE deben ser LF (se ejecutan en runners Linux del CI).
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+
+# Archivos binarios: nunca tocar.
+*.wav binary
+*.msi binary
+*.apk binary
+*.png binary
+*.jpg binary
+*.ico binary

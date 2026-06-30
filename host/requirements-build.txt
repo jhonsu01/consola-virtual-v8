@@ -1,0 +1,3 @@
+# Dependencias SOLO para empaquetar el MSI (no necesarias en ejecucion).
+# cx_Freeze 7.2+ construye el MSI sin depender de msilib (removido en Py 3.13).
+cx_Freeze>=7.2

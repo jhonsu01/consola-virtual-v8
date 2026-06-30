@@ -1,0 +1,4 @@
+# Dependencias de ejecucion del Host (Windows)
+PySide6>=6.6,<6.9
+pygame>=2.5
+websockets>=12.0

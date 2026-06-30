@@ -1,0 +1,37 @@
+# ----------------------------- Python / Host -----------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+host/build/
+host/dist/
+*.msi
+*.spec
+
+# ----------------------------- Flutter / Mobile ---------------------------
+# El scaffold de plataforma se REGENERA con `flutter create` (local y CI),
+# por eso NO se versiona. Solo se versionan lib/, pubspec.yaml, test/, etc.
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/build/
+mobile/android/
+mobile/ios/
+mobile/linux/
+mobile/macos/
+mobile/windows/
+mobile/web/
+mobile/*.apk
+mobile/*.iml
+mobile/.metadata
+
+# ----------------------------- Editores / SO ------------------------------
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
+.tmp/

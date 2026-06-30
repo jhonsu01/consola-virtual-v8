@@ -1,0 +1,119 @@
+name: Release
+
+# Se dispara al publicar un tag de version (vX.Y.Z). Compila el MSI (Windows) y
+# el APK (Android), y los publica como assets de una GitHub Release visible.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag de version a publicar (ej: v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # ------------------------------------------------------------------ #
+  # 1) Instalador MSI del Host (Windows)
+  # ------------------------------------------------------------------ #
+  build-msi:
+    name: Build MSI (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        working-directory: host
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Construir MSI con cx_Freeze
+        working-directory: host
+        run: python build_msi.py bdist_msi
+
+      - name: Renombrar MSI con la version del tag
+        working-directory: host
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem dist/*.msi | Select-Object -First 1
+          $ref = "${{ github.ref_name }}"
+          Copy-Item $msi.FullName "dist/ConsolaVirtualV8-$ref.msi"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msi
+          path: host/dist/ConsolaVirtualV8-*.msi
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------ #
+  # 2) APK del controlador remoto (Android)
+  # ------------------------------------------------------------------ #
+  build-apk:
+    name: Build APK (Android)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Regenerar scaffold Android y restaurar fuentes
+        working-directory: mobile
+        run: |
+          flutter create --platforms=android --project-name consola_v8_remote --org com.consolav8 .
+          git checkout -- pubspec.yaml lib/main.dart
+          flutter pub get
+
+      - name: Compilar APK release
+        working-directory: mobile
+        run: flutter build apk --release
+
+      - name: Renombrar APK con la version del tag
+        working-directory: mobile
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "ConsolaV8-Remote-${{ github.ref_name }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: mobile/ConsolaV8-Remote-*.apk
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------ #
+  # 3) Publicar la Release con ambos binarios
+  # ------------------------------------------------------------------ #
+  publish:
+    name: Publicar Release
+    needs: [build-msi, build-apk]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar artefactos
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Crear / actualizar GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Consola Virtual V8 ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/msi/*.msi
+            artifacts/apk/*.apk
