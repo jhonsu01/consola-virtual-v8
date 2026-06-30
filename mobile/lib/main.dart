@@ -453,20 +453,59 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            children: [
-              _buildTopBar(),
-              const SizedBox(height: 8),
-              Expanded(flex: 7, child: _buildKnobs()),
-              const SizedBox(height: 8),
-              Expanded(flex: 2, child: _buildModes()),
-              const SizedBox(height: 8),
-              Expanded(flex: 4, child: _buildEffects()),
-            ],
+          padding: const EdgeInsets.all(8),
+          child: OrientationBuilder(
+            builder: (context, orientation) => orientation == Orientation.portrait
+                ? _buildPortrait()
+                : _buildLandscape(),
           ),
         ),
       ),
+    );
+  }
+
+  // Vertical: pila de paneles que llenan toda la altura.
+  Widget _buildPortrait() {
+    return Column(
+      children: [
+        _buildTopBar(),
+        const SizedBox(height: 8),
+        Expanded(flex: 7, child: _buildKnobs()),
+        const SizedBox(height: 8),
+        Expanded(flex: 3, child: _buildModes()),
+        const SizedBox(height: 8),
+        Expanded(flex: 5, child: _buildEffects()),
+      ],
+    );
+  }
+
+  // Horizontal: knobs a la izquierda; modos + efectos a la derecha. Asi se
+  // aprovecha el ancho y no queda "aplanado".
+  Widget _buildLandscape() {
+    return Column(
+      children: [
+        _buildTopBar(),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(flex: 5, child: _buildKnobs()),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 5,
+                child: Column(
+                  children: [
+                    Expanded(flex: 3, child: _buildModes()),
+                    const SizedBox(height: 8),
+                    Expanded(flex: 5, child: _buildEffects()),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -504,26 +543,33 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     );
   }
 
+  // Aviso de conexion discreto: un punto verde, la IP en gris tenue y un
+  // pequeno boton para desconectar.
   Widget _buildTopBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-          color: kPanel, borderRadius: BorderRadius.circular(10)),
+    return SizedBox(
+      height: 22,
       child: Row(
         children: [
-          const Icon(Icons.cloud_done, color: Colors.green, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text('Conectado a ${widget.host}',
-                style: const TextStyle(color: kText, fontSize: 13)),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+                color: Color(0xFF4CAF50), shape: BoxShape.circle),
           ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: kAccent, size: 20),
-            tooltip: 'Desconectar',
-            onPressed: () {
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(widget.host,
+                style: const TextStyle(color: Color(0xFF777777), fontSize: 11)),
+          ),
+          InkWell(
+            onTap: () {
               widget.channel.sink.close();
               Navigator.of(context).pop();
             },
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: Icon(Icons.logout, color: Color(0xFF777777), size: 16),
+            ),
           ),
         ],
       ),
@@ -550,10 +596,10 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
     return Row(
       children: [
         SizedBox(
-          width: 64,
+          width: 74,
           child: Text(name,
               style: const TextStyle(
-                  color: kText, fontWeight: FontWeight.bold, fontSize: 12)),
+                  color: kText, fontWeight: FontWeight.bold, fontSize: 14)),
         ),
         Expanded(
           child: Slider(
@@ -563,10 +609,11 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
           ),
         ),
         SizedBox(
-          width: 44,
+          width: 50,
           child: Text(display,
               textAlign: TextAlign.right,
-              style: const TextStyle(color: kAccent, fontSize: 12)),
+              style: const TextStyle(
+                  color: kAccent, fontSize: 14, fontWeight: FontWeight.w600)),
         ),
       ],
     );
@@ -578,6 +625,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
       decoration: BoxDecoration(
           color: kPanel, borderRadius: BorderRadius.circular(12)),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: kModes.map((m) {
           final active = _modes[m]!;
           return Expanded(
@@ -592,13 +640,19 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
                     border: Border.all(color: kAccent, width: 2),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(
-                    m,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: active ? Colors.black : kText,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Text(
+                        m,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: active ? Colors.black : kText,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -627,6 +681,7 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
 
   Widget _buildEffectRow(List<String> names) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: names.map((n) {
         return Expanded(
           child: Padding(
@@ -635,17 +690,18 @@ class _ConsoleScreenState extends State<ConsoleScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: kEffect,
                 foregroundColor: Colors.white,
-                padding: EdgeInsets.zero,
+                padding: const EdgeInsets.all(4),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                     side: const BorderSide(color: Color(0xFF444444))),
               ),
               onPressed: () => _onEffect(n),
               child: FittedBox(
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Text(n, textAlign: TextAlign.center),
-                ),
+                fit: BoxFit.scaleDown,
+                child: Text(n,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w600)),
               ),
             ),
           ),

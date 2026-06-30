@@ -22,10 +22,14 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import threading
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Tuple
 
 logger = logging.getLogger("consola_v8.audio")
+
+#: Formatos de audio aceptados al personalizar efectos (por prioridad).
+SUPPORTED_EXTS = (".wav", ".ogg", ".mp3")
 
 
 class AudioEngine:
@@ -61,8 +65,16 @@ class AudioEngine:
     #: Porcentaje de atenuacion de la musica al activarse el ducking.
     DUCK_ATTENUATION = 0.70
 
-    def __init__(self, base_dir: Optional[str] = None) -> None:
+    def __init__(self, base_dir: Optional[str] = None,
+                 user_dir: Optional[str] = None) -> None:
         self._base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
+        # Carpeta ESCRIBIBLE para los sonidos personalizados del usuario.
+        # (La carpeta sfx empaquetada vive en Program Files y es de solo lectura.)
+        self._user_dir = user_dir or self._default_user_dir()
+        try:
+            os.makedirs(self._user_dir, exist_ok=True)
+        except Exception:  # pragma: no cover
+            pass
         self._lock = threading.RLock()
         self._available = False  # True si pygame.mixer inicializo bien.
 
@@ -112,21 +124,115 @@ class AudioEngine:
     def load_effects(self) -> None:
         """Carga en memoria cada efecto declarado en ``EFFECTS``.
 
-        Inicializar los binarios en RAM evita demoras por lectura de disco en
-        el momento del disparo (requisito de baja latencia de la guia V8).
+        Da prioridad al sonido PERSONALIZADO del usuario; si no existe, usa el
+        empaquetado. Inicializar los binarios en RAM evita demoras por lectura
+        de disco al dispararlos (requisito de baja latencia de la guia V8).
         """
         if not self._available:
             return
-        for name, rel_path in self.EFFECTS.items():
-            abs_path = os.path.join(self._base_dir, rel_path)
-            if not os.path.isfile(abs_path):
-                logger.warning("Efecto '%s' sin archivo: %s", name, abs_path)
+        for name in self.EFFECTS:
+            path = self._resolve_effect_path(name)
+            if not path or not os.path.isfile(path):
+                logger.warning("Efecto '%s' sin archivo.", name)
                 continue
             try:
-                self._sounds[name] = self._mixer.Sound(abs_path)
+                self._sounds[name] = self._mixer.Sound(path)
             except Exception as exc:
                 logger.warning("No se pudo cargar '%s': %s", name, exc)
         logger.info("Efectos cargados en memoria: %d", len(self._sounds))
+
+    # ------------------------------------------------------------------ #
+    # Personalizacion de sonidos
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _default_user_dir() -> str:
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "ConsolaVirtualV8", "sfx")
+
+    @property
+    def user_dir(self) -> str:
+        return self._user_dir
+
+    def _stem(self, name: str) -> str:
+        """Nombre de archivo base (sin extension) del efecto."""
+        return os.path.splitext(os.path.basename(self.EFFECTS[name]))[0]
+
+    def _resolve_effect_path(self, name: str) -> Optional[str]:
+        """Ruta del efecto: primero el personalizado, luego el empaquetado."""
+        stem = self._stem(name)
+        for ext in SUPPORTED_EXTS:
+            candidate = os.path.join(self._user_dir, stem + ext)
+            if os.path.isfile(candidate):
+                return candidate
+        bundled = os.path.join(self._base_dir, self.EFFECTS[name])
+        return bundled if os.path.isfile(bundled) else None
+
+    def effect_source(self, name: str) -> Tuple[str, bool]:
+        """Devuelve (ruta_actual, es_personalizado) del efecto."""
+        stem = self._stem(name)
+        for ext in SUPPORTED_EXTS:
+            candidate = os.path.join(self._user_dir, stem + ext)
+            if os.path.isfile(candidate):
+                return candidate, True
+        return os.path.join(self._base_dir, self.EFFECTS[name]), False
+
+    def set_effect_file(self, name: str, src_path: str) -> bool:
+        """Reemplaza el sonido de un efecto copiandolo a la carpeta de usuario.
+
+        Acepta WAV/OGG/MP3. Recarga el efecto en memoria de inmediato.
+        """
+        if name not in self.EFFECTS:
+            return False
+        ext = os.path.splitext(src_path)[1].lower()
+        if ext not in SUPPORTED_EXTS:
+            logger.warning("Formato no soportado para '%s': %s", name, ext)
+            return False
+        stem = self._stem(name)
+        # Elimina versiones previas (otras extensiones) para evitar ambiguedad.
+        for old_ext in SUPPORTED_EXTS:
+            old = os.path.join(self._user_dir, stem + old_ext)
+            if os.path.isfile(old):
+                try:
+                    os.remove(old)
+                except Exception:  # pragma: no cover
+                    pass
+        dest = os.path.join(self._user_dir, stem + ext)
+        try:
+            shutil.copyfile(src_path, dest)
+        except Exception as exc:
+            logger.warning("No se pudo copiar '%s': %s", src_path, exc)
+            return False
+        # Recarga solo este efecto.
+        if self._available:
+            try:
+                with self._lock:
+                    self._sounds[name] = self._mixer.Sound(dest)
+            except Exception as exc:
+                logger.warning("No se pudo recargar '%s': %s", name, exc)
+                return False
+        logger.info("Efecto '%s' personalizado -> %s", name, dest)
+        return True
+
+    def reset_effect(self, name: str) -> bool:
+        """Restaura el sonido empaquetado original de un efecto."""
+        if name not in self.EFFECTS:
+            return False
+        stem = self._stem(name)
+        for ext in SUPPORTED_EXTS:
+            custom = os.path.join(self._user_dir, stem + ext)
+            if os.path.isfile(custom):
+                try:
+                    os.remove(custom)
+                except Exception:  # pragma: no cover
+                    pass
+        bundled = os.path.join(self._base_dir, self.EFFECTS[name])
+        if self._available and os.path.isfile(bundled):
+            try:
+                with self._lock:
+                    self._sounds[name] = self._mixer.Sound(bundled)
+            except Exception:  # pragma: no cover
+                return False
+        return True
 
     # ------------------------------------------------------------------ #
     # Reproduccion de efectos instantaneos

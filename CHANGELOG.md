@@ -6,6 +6,26 @@ y el versionado es [SemVer](https://semver.org/lang/es/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-30
+
+### Agregado
+- **Multiples dispositivos simultaneos con varios PINs de acceso.** El Host
+  gestiona un conjunto de PINs (uno por persona/dispositivo) y un **panel de
+  Sesiones** ("Sesiones") que lista los dispositivos conectados (nombre, IP,
+  PIN) y permite **expulsarlos** o **revocar PINs**. "Nuevo PIN" ahora *agrega*
+  un PIN sin reemplazar los existentes.
+- **Personalizacion de sonidos** desde el Host ("Sonidos"): reemplaza cualquiera
+  de los 12 efectos por tu propio audio. Indica el **formato** (WAV/OGG/MP3) y
+  la **duracion recomendada (0.2–5 s, max 10 s)**. Los archivos se guardan en
+  `%APPDATA%/ConsolaVirtualV8/sfx/` (carpeta escribible) con botones Probar y
+  restaurar al original.
+
+### Cambiado
+- **UI movil rediseñada y responsiva:** controles mas grandes que llenan el
+  espacio disponible (los efectos ahora se estiran), **layout horizontal**
+  reorganizado (knobs a la izquierda, modos + efectos a la derecha) para que no
+  se vea aplanado, y **aviso de conexion mas discreto** (punto + IP tenue).
+
 ## [1.1.0] - 2026-06-30
 
 ### Agregado
@@ -53,6 +73,7 @@ y el versionado es [SemVer](https://semver.org/lang/es/).
   estan cableados como parametros del protocolo; su DSP en tiempo real se
   abordara en una version futura con backend `sounddevice + numpy`.
 
-[Unreleased]: https://github.com/jhonsu01/consola-virtual-v8/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jhonsu01/consola-virtual-v8/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/jhonsu01/consola-virtual-v8/releases/tag/v1.2.0
 [1.1.0]: https://github.com/jhonsu01/consola-virtual-v8/releases/tag/v1.1.0
 [1.0.0]: https://github.com/jhonsu01/consola-virtual-v8/releases/tag/v1.0.0

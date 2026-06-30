@@ -11,7 +11,6 @@ cambios hechos en la UI se difunden a los clientes con ``broadcast_threadsafe``.
 from __future__ import annotations
 
 import logging
-import random
 import sys
 import threading
 from typing import Any, Dict
@@ -20,8 +19,10 @@ from PySide6 import QtCore, QtWidgets
 
 from . import firewall
 from .audio_engine import AudioEngine
+from .dialogs import SessionsDialog, SoundsDialog
 from .discovery import DEFAULT_DISCOVERY_PORT, DiscoveryResponder
 from .server import ConsoleServer, DEFAULT_PORT
+from .sessions import SessionManager
 from .ui import ConsoleWindow
 from .utils import get_local_ip
 from .version import __version__
@@ -41,6 +42,7 @@ class _Bridge(QtCore.QObject):
     knob = QtCore.Signal(str, float)
     mode = QtCore.Signal(str, bool)
     effect = QtCore.Signal(str)
+    sessions = QtCore.Signal()  # refresca el PIN/contador tras conectar/desconectar
 
 
 class ConsolaApp:
@@ -54,25 +56,22 @@ class ConsolaApp:
         self.audio = AudioEngine()
         self.audio.init_audio()
 
-        # PIN de emparejamiento de 4 digitos generado en cada arranque.
-        self.pin = self._generate_pin()
+        # Gestor de multiples PINs de acceso y sesiones simultaneas.
+        self.sessions = SessionManager()
 
         self.window = ConsoleWindow(version=__version__)
         self.bridge = _Bridge()
         self.server = ConsoleServer(
             on_event=self._on_network_event,
             port=port,
-            pin_provider=lambda: self.pin,
+            auth_callback=self._authorize_session,
+            on_disconnect=self._on_session_closed,
             state_provider=self.audio.snapshot,
         )
         self.discovery = DiscoveryResponder(ws_port=port, disc_port=DEFAULT_DISCOVERY_PORT)
 
         self._wire_ui()
         self._wire_bridge()
-
-    @staticmethod
-    def _generate_pin() -> str:
-        return f"{random.randint(0, 9999):04d}"
 
     # ------------------------------------------------------------------ #
     # Cableado de senales
@@ -83,6 +82,8 @@ class ConsolaApp:
         self.window.effectTriggered.connect(self._on_ui_effect)
         self.window.firewallRequested.connect(self._on_firewall_requested)
         self.window.regeneratePinRequested.connect(self._on_regenerate_pin)
+        self.window.sessionsRequested.connect(self._open_sessions)
+        self.window.soundsRequested.connect(self._open_sounds)
 
     @QtCore.Slot()
     def _on_firewall_requested(self) -> None:
@@ -95,15 +96,48 @@ class ConsolaApp:
 
     @QtCore.Slot()
     def _on_regenerate_pin(self) -> None:
-        self.pin = self._generate_pin()
-        self.window.set_pin(self.pin)
-        self.window.notify("PIN regenerado. Los dispositivos deberan reconectarse.")
+        new_pin = self.sessions.add_pin()
+        self._refresh_pin_label()
+        self.window.notify(f"Nuevo PIN {new_pin} generado. Compartelo con otro dispositivo.")
+
+    @QtCore.Slot()
+    def _open_sessions(self) -> None:
+        dlg = SessionsDialog(
+            self.sessions, kick=self.server.disconnect_session, parent=self.window)
+        dlg.exec()
+
+    @QtCore.Slot()
+    def _open_sounds(self) -> None:
+        dlg = SoundsDialog(self.audio, parent=self.window)
+        dlg.exec()
+
+    # ------------------------------------------------------------------ #
+    # Autorizacion de sesiones (corren en el hilo de red)
+    # ------------------------------------------------------------------ #
+    def _authorize_session(self, pin: str, device: str, ip: str):
+        """Valida el PIN y abre una sesion. Devuelve session_id o None."""
+        if not self.sessions.validate(pin):
+            return None
+        sid = self.sessions.open(device, ip, pin)
+        self.bridge.sessions.emit()
+        return sid
+
+    def _on_session_closed(self, sid: str) -> None:
+        self.sessions.close(sid)
+        self.bridge.sessions.emit()
+
+    @QtCore.Slot()
+    def _refresh_pin_label(self) -> None:
+        pins = self.sessions.pins()
+        primary = pins[0] if pins else "----"
+        self.window.set_pin(primary, extra=max(0, len(pins) - 1))
 
     def _wire_bridge(self) -> None:
         self.bridge.knob.connect(self.window.apply_knob)
         self.bridge.knob.connect(self._apply_audio_knob)
         self.bridge.mode.connect(self.window.apply_mode)
         self.bridge.effect.connect(self.window.flash_effect)
+        self.bridge.sessions.connect(self._refresh_pin_label)
 
     # ------------------------------------------------------------------ #
     # Eventos de la UI local -> audio + difusion a clientes
@@ -159,7 +193,7 @@ class ConsolaApp:
         self.discovery.start()
         ip = get_local_ip()
         self.window.set_network_info(ip, self.port, listening=False)
-        self.window.set_pin(self.pin)
+        self._refresh_pin_label()
         self.window.show()
 
         # Refresca el estado del servidor y conteo de clientes periodicamente.

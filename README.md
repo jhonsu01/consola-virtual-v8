@@ -59,6 +59,13 @@ y un **PIN de emparejamiento** de 4 dígitos. La primera vez, pulsa **"Abrir
 Firewall"** (pedirá permiso de administrador) para permitir el tráfico LAN en
 los puertos 8080 (TCP) y 8079 (UDP de descubrimiento).
 
+Botones del Host:
+- **Sesiones** — multiples dispositivos a la vez: lista los conectados (nombre,
+  IP, PIN) y permite expulsarlos o revocar PINs.
+- **Nuevo PIN** — agrega un PIN adicional (uno por persona/dispositivo).
+- **Sonidos** — personaliza los 12 efectos con tu propio audio (WAV/OGG/MP3,
+  0.2–5 s recomendado); se guardan en `%APPDATA%/ConsolaVirtualV8/sfx/`.
+
 ### App remota (Android)
 
 1. Instala el **APK** desde [Releases](https://github.com/jhonsu01/consola-virtual-v8/releases/latest).

@@ -43,14 +43,18 @@ class ConsoleServer:
         on_event: Callable[[Dict[str, Any]], None],
         host: str = DEFAULT_HOST,
         port: int = DEFAULT_PORT,
-        pin_provider: Optional[Callable[[], Optional[str]]] = None,
+        auth_callback: Optional[Callable[[str, str, str], Optional[str]]] = None,
+        on_disconnect: Optional[Callable[[str], None]] = None,
         state_provider: Optional[Callable[[], Dict[str, Any]]] = None,
     ) -> None:
         self._on_event = on_event
         self._host = host
         self._port = port
-        # Devuelve el PIN actual (o None/"" para desactivar el emparejamiento).
-        self._pin_provider = pin_provider
+        # auth_callback(pin, device, ip) -> session_id si el PIN es valido, None si no.
+        # Si es None, el emparejamiento esta desactivado y se acepta a todos.
+        self._auth_callback = auth_callback
+        # on_disconnect(session_id): se llama cuando una sesion se cierra.
+        self._on_disconnect = on_disconnect
         # Devuelve el estado actual (knobs/modes) para sincronizar al conectar.
         self._state_provider = state_provider
 
@@ -58,6 +62,7 @@ class ConsoleServer:
         self._thread: Optional[threading.Thread] = None
         self._server = None
         self._clients: Set[Any] = set()  # solo clientes AUTENTICADOS
+        self._sessions: Dict[str, Any] = {}  # session_id -> websocket
         self._running = threading.Event()
 
     # ------------------------------------------------------------------ #
@@ -113,15 +118,17 @@ class ConsoleServer:
     # Manejo de conexiones
     # ------------------------------------------------------------------ #
     async def _handler(self, websocket) -> None:
-        """Atiende una conexion entrante (un cliente Android)."""
+        """Atiende una conexion entrante. Multiples conexiones coexisten."""
         peer = getattr(websocket, "remote_address", "?")
 
         # Emparejamiento por PIN ANTES de aceptar cualquier evento.
-        if not await self._authenticate(websocket, peer):
+        sid = await self._authenticate(websocket, peer)
+        if sid is None:
             return
 
         self._clients.add(websocket)
-        logger.info("Cliente AUTENTICADO: %s (total=%d)", peer, len(self._clients))
+        self._sessions[sid] = websocket
+        logger.info("Sesion ABIERTA %s: %s (activas=%d)", sid, peer, len(self._clients))
         await self._send_state(websocket)
         try:
             async for raw in websocket:
@@ -130,41 +137,60 @@ class ConsoleServer:
             logger.debug("Conexion finalizada (%s): %s", peer, exc)
         finally:
             self._clients.discard(websocket)
-            logger.info("Cliente desconectado: %s (total=%d)", peer, len(self._clients))
+            self._sessions.pop(sid, None)
+            logger.info("Sesion CERRADA %s: %s (activas=%d)", sid, peer, len(self._clients))
+            if self._on_disconnect:
+                try:
+                    self._on_disconnect(sid)
+                except Exception:  # pragma: no cover
+                    pass
 
-    async def _authenticate(self, websocket, peer) -> bool:
-        """Exige un mensaje ``auth`` con el PIN correcto. Devuelve True si pasa.
+    async def _authenticate(self, websocket, peer) -> Optional[str]:
+        """Exige ``auth`` con un PIN valido. Devuelve el session_id o None.
 
-        Si no hay PIN configurado (provider None o vacio), el emparejamiento se
-        considera desactivado y se acepta la conexion directamente.
+        Si no hay ``auth_callback`` el emparejamiento esta desactivado y se
+        acepta la conexion con un id generico.
         """
-        pin = self._pin_provider() if self._pin_provider else None
-        if not pin:
-            return True
+        if self._auth_callback is None:
+            return "open"
 
         try:
             raw = await asyncio.wait_for(websocket.recv(), timeout=self.AUTH_TIMEOUT)
         except Exception:
             logger.info("Auth: timeout/cierre sin PIN de %s", peer)
             await self._safe_close(websocket)
-            return False
+            return None
 
         try:
             msg = json.loads(raw)
         except Exception:
             msg = {}
 
-        sent = str(msg.get("pin", "")).strip()
-        if msg.get("event") == "auth" and sent == str(pin).strip():
+        pin = str(msg.get("pin", "")).strip()
+        device = str(msg.get("device", "?"))
+        ip = peer[0] if isinstance(peer, (tuple, list)) and peer else str(peer)
+
+        sid = None
+        if msg.get("event") == "auth":
+            sid = self._auth_callback(pin, device, ip)
+
+        if sid:
             await self._try_send(websocket, {"event": "auth_result", "status": "ok"})
-            device = msg.get("device", "?")
-            logger.info("Auth OK: %s (device=%s)", peer, device)
-            return True
+            logger.info("Auth OK: %s (device=%s, session=%s)", peer, device, sid)
+            return sid
 
         logger.info("Auth FALLIDA: %s (PIN incorrecto)", peer)
         await self._try_send(websocket, {"event": "auth_result", "status": "fail"})
         await self._safe_close(websocket)
-        return False
+        return None
+
+    def disconnect_session(self, sid: str) -> None:
+        """Expulsa una sesion por id desde cualquier hilo (la UI)."""
+        if not self._loop or not self._loop.is_running():
+            return
+        ws = self._sessions.get(sid)
+        if ws is not None:
+            asyncio.run_coroutine_threadsafe(self._safe_close(ws), self._loop)
 
     @staticmethod
     async def _try_send(websocket, message: Dict[str, Any]) -> None:

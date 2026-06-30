@@ -161,6 +161,8 @@ class ConsoleWindow(QtWidgets.QMainWindow):
     effectTriggered = QtCore.Signal(str)
     firewallRequested = QtCore.Signal()
     regeneratePinRequested = QtCore.Signal()
+    sessionsRequested = QtCore.Signal()
+    soundsRequested = QtCore.Signal()
 
     def __init__(self, version: str = "1.0.0"):
         super().__init__()
@@ -209,39 +211,55 @@ class ConsoleWindow(QtWidgets.QMainWindow):
 
         # --- Fila 2: PIN + acciones (Firewall / nuevo PIN) ---
         row2 = QtWidgets.QHBoxLayout()
-        pin_caption = QtWidgets.QLabel("PIN de emparejamiento:")
+        pin_caption = QtWidgets.QLabel("PIN:")
         pin_caption.setObjectName("IpLabel")
         self.pin_label = QtWidgets.QLabel("----")
         self.pin_label.setObjectName("PinLabel")
         self.notify_label = QtWidgets.QLabel("")
         self.notify_label.setObjectName("StatusLabel")
 
-        self.firewall_btn = QtWidgets.QPushButton("Abrir Firewall")
-        self.firewall_btn.setObjectName("ActionButton")
-        self.firewall_btn.setToolTip(
-            "Crea la regla de Firewall para el puerto 8080. Pulsalo si el "
-            "telefono no conecta (pedira permiso de administrador)."
-        )
-        self.firewall_btn.clicked.connect(self.firewallRequested.emit)
-
-        self.newpin_btn = QtWidgets.QPushButton("Nuevo PIN")
-        self.newpin_btn.setObjectName("ActionButton")
-        self.newpin_btn.clicked.connect(self.regeneratePinRequested.emit)
+        self.sessions_btn = self._action_button(
+            "Sesiones", "Ver y gestionar dispositivos conectados y PINs.",
+            self.sessionsRequested.emit)
+        self.newpin_btn = self._action_button(
+            "Nuevo PIN", "Genera un PIN adicional (no reemplaza los existentes).",
+            self.regeneratePinRequested.emit)
+        self.sounds_btn = self._action_button(
+            "Sonidos", "Personaliza los 12 efectos de audio.",
+            self.soundsRequested.emit)
+        self.firewall_btn = self._action_button(
+            "Abrir Firewall",
+            "Crea la regla de Firewall (TCP 8080 / UDP 8079). Pulsalo si el "
+            "telefono no conecta (pedira permiso de administrador).",
+            self.firewallRequested.emit)
 
         row2.addWidget(pin_caption)
         row2.addWidget(self.pin_label)
         row2.addSpacing(16)
         row2.addWidget(self.notify_label, 1)
-        row2.addWidget(self.firewall_btn)
+        row2.addWidget(self.sessions_btn)
         row2.addWidget(self.newpin_btn)
+        row2.addWidget(self.sounds_btn)
+        row2.addWidget(self.firewall_btn)
 
         outer.addLayout(row1)
         outer.addLayout(row2)
         return bar
 
+    @staticmethod
+    def _action_button(text: str, tip: str, slot) -> QtWidgets.QPushButton:
+        btn = QtWidgets.QPushButton(text)
+        btn.setObjectName("ActionButton")
+        btn.setToolTip(tip)
+        btn.clicked.connect(slot)
+        return btn
+
     # -- PIN y notificaciones --------------------------------------------- #
-    def set_pin(self, pin: str) -> None:
-        self.pin_label.setText(str(pin))
+    def set_pin(self, pin: str, extra: int = 0) -> None:
+        text = str(pin)
+        if extra > 0:
+            text += f"  (+{extra})"
+        self.pin_label.setText(text)
 
     def notify(self, message: str) -> None:
         """Muestra un mensaje transitorio en la barra superior."""
