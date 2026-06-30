@@ -45,12 +45,12 @@ jobs:
         run: |
           $msi = Get-ChildItem dist/*.msi | Select-Object -First 1
           $ref = "${{ github.ref_name }}"
-          Copy-Item $msi.FullName "dist/ConsolaVirtualV8-$ref.msi"
+          Copy-Item $msi.FullName "dist/ConsolaVirtualV8-Setup-$ref.msi"
 
       - uses: actions/upload-artifact@v4
         with:
           name: msi
-          path: host/dist/ConsolaVirtualV8-*.msi
+          path: host/dist/ConsolaVirtualV8-Setup-*.msi
           if-no-files-found: error
 
   # ------------------------------------------------------------------ #

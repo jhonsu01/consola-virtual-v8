@@ -53,7 +53,7 @@ setup(
     name="ConsolaVirtualV8",
     version=__version__,
     description="Consola de Sonido Virtual V8 - Host de escritorio",
-    author="jhonsu777",
+    author="jhonsu01",
     options={"build_exe": build_exe_options, "bdist_msi": bdist_msi_options},
     executables=executables,
 )

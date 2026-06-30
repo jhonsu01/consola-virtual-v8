@@ -1,9 +1,9 @@
 # 🎛️ Consola de Sonido Virtual V8
 
-[![CI](https://github.com/jhonsu777/consola-virtual-v8/actions/workflows/ci.yml/badge.svg)](https://github.com/jhonsu777/consola-virtual-v8/actions/workflows/ci.yml)
-[![Release](https://github.com/jhonsu777/consola-virtual-v8/actions/workflows/release.yml/badge.svg)](https://github.com/jhonsu777/consola-virtual-v8/actions/workflows/release.yml)
+[![CI](https://github.com/jhonsu01/consola-virtual-v8/actions/workflows/ci.yml/badge.svg)](https://github.com/jhonsu01/consola-virtual-v8/actions/workflows/ci.yml)
+[![Release](https://github.com/jhonsu01/consola-virtual-v8/actions/workflows/release.yml/badge.svg)](https://github.com/jhonsu01/consola-virtual-v8/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
-[![Latest Release](https://img.shields.io/github/v/release/jhonsu777/consola-virtual-v8?color=ff5722)](https://github.com/jhonsu777/consola-virtual-v8/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/jhonsu01/consola-virtual-v8?color=ff5722)](https://github.com/jhonsu01/consola-virtual-v8/releases/latest)
 
 Réplica software de la tarjeta de sonido **V8 Sound Card** con interfaz de tema
 oscuro. Un **Host de escritorio (Windows)** actúa como motor de audio y servidor
@@ -11,7 +11,7 @@ LAN, y una **app móvil (Android)** lo controla de forma remota por Wi-Fi en
 tiempo real.
 
 > ⬇️ **Descargas:** el **APK** (Android) y el **MSI** (Windows) se publican
-> automáticamente en la [página de Releases](https://github.com/jhonsu777/consola-virtual-v8/releases/latest)
+> automáticamente en la [página de Releases](https://github.com/jhonsu01/consola-virtual-v8/releases/latest)
 > cada vez que se crea un tag de versión.
 
 ---
@@ -61,7 +61,7 @@ Firewall de Windows para tráfico LAN entrante.
 
 ### App remota (Android)
 
-1. Instala el **APK** desde [Releases](https://github.com/jhonsu777/consola-virtual-v8/releases/latest).
+1. Instala el **APK** desde [Releases](https://github.com/jhonsu01/consola-virtual-v8/releases/latest).
 2. Conecta el teléfono a la **misma red Wi-Fi** que el PC.
 3. Abre la app, escribe la IP del Host (ej. `192.168.1.15`) y pulsa **Conectar**.
 
@@ -166,4 +166,4 @@ consola-virtual-v8/
 
 ## 📜 Licencia
 
-[MIT](LICENSE) © 2026 jhonsu777
+[MIT](LICENSE) © 2026 jhonsu01

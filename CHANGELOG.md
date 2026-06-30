@@ -33,5 +33,5 @@ y el versionado es [SemVer](https://semver.org/lang/es/).
   estan cableados como parametros del protocolo; su DSP en tiempo real se
   abordara en una version futura con backend `sounddevice + numpy`.
 
-[Unreleased]: https://github.com/jhonsu777/consola-virtual-v8/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/jhonsu777/consola-virtual-v8/releases/tag/v1.0.0
+[Unreleased]: https://github.com/jhonsu01/consola-virtual-v8/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/jhonsu01/consola-virtual-v8/releases/tag/v1.0.0
